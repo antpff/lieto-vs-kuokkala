@@ -1,0 +1,434 @@
+    <!DOCTYPE html>
+    <html lang="fi">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lieto vs. Kuokkala</title>
+    <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #101827;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    h1 { font-size: 27px; }
+    .score { font-size: 23px; font-weight: bold; margin: 15px; }
+    canvas {
+      width: 100%;
+      max-width: 800px;
+      height: auto;
+      border: 3px solid white;
+      border-radius: 10px;
+      background: #78b65b;
+      touch-action: none;
+    }
+    button, select {
+      padding: 12px;
+      margin: 4px;
+      border: 0;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button { background: #2563eb; color: white; }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, 60px);
+      justify-content: center;
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .controls button { height: 52px; font-size: 22px; }
+    #status { min-height: 45px; padding: 12px; }
+    </style>
+    </head>
+    <body>
+
+    <h1>🏴 LIETO vs. KUOKKALA</h1>
+    <p>Lipunryöstö — 1 vastaan 1!</p>
+    <div class="score" id="score">🔵 0 – 0 🔴</div>
+
+    <canvas id="game" width="800" height="500"></canvas>
+
+    <div id="status">Paina Aloita peli!</div>
+    <button id="start">▶ Aloita peli</button>
+    <button id="reset">↻ Nollaa pisteet</button>
+
+    <p>
+      🔵 Lieto: WASD<br>
+      🔴 Kuokkala: nuolinäppäimet
+    </p>
+
+    <label for="team">Puhelinohjaus:</label>
+    <select id="team">
+      <option value="blue">Lieto</option>
+      <option value="red">Kuokkala</option>
+    </select>
+
+    <div class="controls">
+      <span></span><button data-dir="up">⬆️</button><span></span>
+      <button data-dir="left">⬅️</button>
+      <button data-dir="down">⬇️</button>
+      <button data-dir="right">➡️</button>
+    </div>
+
+    <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const status = document.getElementById("status");
+    const scoreText = document.getElementById("score");
+
+    const W = 800, H = 500;
+
+    const bases = {
+      blue: { x: 55, y: 250 },
+      red: { x: 745, y: 250 }
+    };
+
+    const walls = [
+      {x:175,y:45,w:38,h:130},
+      {x:175,y:325,w:38,h:130},
+      {x:280,y:155,w:90,h:35},
+      {x:280,y:310,w:90,h:35},
+      {x:385,y:55,w:35,h:115},
+      {x:385,y:330,w:35,h:115},
+      {x:430,y:210,w:60,h:80},
+      {x:510,y:125,w:100,h:32},
+      {x:510,y:340,w:100,h:32},
+      {x:605,y:210,w:35,h:80}
+    ];
+
+    let players, flags;
+    let running = false;
+    let blueScore = 0, redScore = 0;
+    let keys = {};
+    let touch = {};
+    let last = 0;
+    let animation;
+    let message = "";
+
+    function resetPositions() {
+      players = {
+        blue: {x:95,y:250,r:12,speed:2.7,carry:null},
+        red: {x:705,y:250,r:12,speed:2.7,carry:null}
+      };
+
+      flags = {
+        blue: {...bases.blue},
+        red: {...bases.red}
+      };
+    }
+
+    function resetFlags() {
+      flags.blue = {...bases.blue};
+      flags.red = {...bases.red};
+      players.blue.carry = null;
+      players.red.carry = null;
+    }
+
+    function collision(x,y,r) {
+      if (x-r<4 || x+r>W-4 || y-r<4 || y+r>H-4)
+        return true;
+
+      return walls.some(w =>
+        x+r>w.x && x-r<w.x+w.w &&
+        y+r>w.y && y-r<w.y+w.h
+      );
+    }
+
+    function move(p,dx,dy) {
+      if (dx && dy) {
+        dx *= 0.7071;
+        dy *= 0.7071;
+      }
+
+      if (!collision(p.x+dx,p.y,p.r)) p.x += dx;
+      if (!collision(p.x,p.y+dy,p.r)) p.y += dy;
+    }
+
+    function distance(a,b) {
+      return Math.hypot(a.x-b.x,a.y-b.y);
+    }
+
+    function say(text) {
+      message = text;
+      status.textContent = text;
+    }
+
+    function flag(x,y,color) {
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x,y+14);
+      ctx.lineTo(x,y-18);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x,y-18);
+      ctx.lineTo(x+22,y-11);
+      ctx.lineTo(x,y-4);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function draw() {
+      ctx.clearRect(0,0,W,H);
+
+      ctx.fillStyle = "#78b65b";
+      ctx.fillRect(0,0,W,H);
+
+      ctx.fillStyle = "rgba(37,99,235,.15)";
+      ctx.fillRect(0,0,W/2,H);
+
+      ctx.fillStyle = "rgba(239,68,68,.15)";
+      ctx.fillRect(W/2,0,W/2,H);
+
+      ctx.strokeStyle = "white";
+      ctx.setLineDash([8,8]);
+      ctx.beginPath();
+      ctx.moveTo(W/2,0);
+      ctx.lineTo(W/2,H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      for (const [team,b] of Object.entries(bases)) {
+        ctx.fillStyle = team==="blue" ? "#2563eb" : "#dc2626";
+        ctx.beginPath();
+        ctx.arc(b.x,b.y,32,0,Math.PI*2);
+        ctx.fill();
+
+        ctx.fillStyle = "white";
+        ctx.font = "bold 12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(team==="blue"?"LIETO":"KUOKKALA",b.x,b.y+47);
+      }
+
+      for (const w of walls) {
+        ctx.fillStyle = "#687386";
+        ctx.fillRect(w.x,w.y,w.w,w.h);
+        ctx.strokeStyle = "#303948";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(w.x,w.y,w.w,w.h);
+      }
+
+      for (const team of ["blue","red"]) {
+        if (players[team].carry !== team) {
+          flag(
+            flags[team].x,
+            flags[team].y,
+            team==="blue"?"#1685ff":"#ff3030"
+          );
+        }
+      }
+
+      for (const team of ["blue","red"]) {
+        const p = players[team];
+
+        ctx.fillStyle = team==="blue"?"#1672e8":"#e23838";
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+        ctx.fill();
+
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = "white";
+        ctx.font = "bold 11px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(team==="blue"?"L":"K",p.x,p.y+4);
+
+        if (p.carry) {
+          flag(p.x+5,p.y-8,p.carry==="blue"?"#1685ff":"#ff3030");
+        }
+      }
+
+      if (!running) {
+        ctx.fillStyle = "rgba(0,0,0,.72)";
+        ctx.fillRect(180,190,440,115);
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.font = "bold 26px Arial";
+        ctx.fillText("LIPUNRYÖSTÖ 1v1",400,230);
+        ctx.font = "16px Arial";
+        ctx.fillText("Varasta lippu ja palaa kotiin!",400,265);
+      }
+    }
+
+    function finishRound(team) {
+      if (team==="blue") blueScore++;
+      else redScore++;
+
+      scoreText.textContent = `🔵 ${blueScore} – ${redScore} 🔴`;
+
+      resetPositions();
+
+      if (blueScore>=3 || redScore>=3) {
+        running = false;
+        say((blueScore>=3?"🏆 LIETO":"🏆 KUOKKALA")+" VOITTI OTTELUN!");
+        document.getElementById("start").textContent = "▶ Uusi ottelu";
+      } else {
+        say((team==="blue"?"🔵 Lieto":"🔴 Kuokkala")+" teki pisteen!");
+      }
+    }
+
+    function update(dt) {
+      if (!running) return;
+
+      for (const team of ["blue","red"]) {
+        const p = players[team];
+
+        let dx=0,dy=0;
+        const t = touch[team] || {};
+
+        if (team==="blue") {
+          dx = (keys.d?1:0)-(keys.a?1:0);
+          dy = (keys.s?1:0)-(keys.w?1:0);
+        } else {
+          dx = (keys.ArrowRight?1:0)-(keys.ArrowLeft?1:0);
+          dy = (keys.ArrowDown?1:0)-(keys.ArrowUp?1:0);
+        }
+
+        dx += (t.right?1:0)-(t.left?1:0);
+        dy += (t.down?1:0)-(t.up?1:0);
+
+        const len = Math.hypot(dx,dy)||1;
+        move(p,dx/len*p.speed*dt,dy/len*p.speed*dt);
+
+        const enemy = team==="blue"?"red":"blue";
+
+        if (!p.carry && distance(p,flags[enemy])<22) {
+          p.carry = enemy;
+          say((team==="blue"?"Lieto":"Kuokkala")+" varasti lipun! Vie se omaan tukikohtaan!");
+        }
+
+        if (p.carry) {
+          flags[p.carry] = {x:p.x,y:p.y};
+
+          if (distance(p,bases[team])<29) {
+            finishRound(team);
+            return;
+          }
+        }
+      }
+
+      const b=players.blue, r=players.red;
+
+      if (distance(b,r)<b.r+r.r) {
+        if (b.carry || r.carry) {
+          resetFlags();
+          b.x=95; b.y=250;
+          r.x=705; r.y=250;
+          say("💥 KIINNI! Molemmat liput palautuivat omille alueilleen!");
+        } else {
+          const dx=r.x-b.x,dy=r.y-b.y;
+          const len=Math.hypot(dx,dy)||1;
+          const push=3;
+          if (!collision(b.x-dx/len*push,b.y-dy/len*push,b.r)) {
+            b.x-=dx/len*push;
+            b.y-=dy/len*push;
+          }
+          if (!collision(r.x+dx/len*push,r.y+dy/len*push,r.r)) {
+            r.x+=dx/len*push;
+            r.y+=dy/len*push;
+          }
+        }
+      }
+    }
+
+    function loop(time) {
+      const dt=Math.min((time-last)/16.67||1,2);
+      last=time;
+      update(dt);
+      draw();
+      if (running) animation=requestAnimationFrame(loop);
+    }
+
+    function startGame() {
+      cancelAnimationFrame(animation);
+      resetPositions();
+      keys={};
+      touch={};
+      running=true;
+      last=performance.now();
+      say("Peli käynnissä! Ryöstä vastustajan lippu!");
+      document.getElementById("start").textContent="↻ Aloita alusta";
+      animation=requestAnimationFrame(loop);
+    }
+
+    document.getElementById("start").onclick=startGame;
+
+    document.getElementById("reset").onclick=()=>{
+      running=false;
+      cancelAnimationFrame(animation);
+      blueScore=0;
+      redScore=0;
+      scoreText.textContent="🔵 0 – 0 🔴";
+      resetPositions();
+      say("Pisteet nollattu!");
+      document.getElementById("start").textContent="▶ Aloita peli";
+      draw();
+    };
+
+    document.addEventListener("keydown",e=>{
+      if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key))
+        e.preventDefault();
+      keys[e.key.length===1?e.key.toLowerCase():e.key]=true;
+    });
+
+    document.addEventListener("keyup",e=>{
+      keys[e.key.length===1?e.key.toLowerCase():e.key]=false;
+    });
+
+    document.querySelectorAll("[data-dir]").forEach(btn=>{
+      const dir=btn.dataset.dir;
+
+      const set=value=>{
+        const team=document.getElementById("team").value;
+        touch[team]=touch[team]||{};
+        touch[team][dir]=value;
+      };
+
+      btn.addEventListener("pointerdown",e=>{
+        e.preventDefault();
+        set(true);
+      });
+
+      ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>{
+        btn.addEventListener(ev,()=>set(false));
+      });
+    });
+
+    window.addEventListener("blur",()=>{
+      keys={};
+      touch={};
+    });
+
+    resetPositions();
+    draw();
+    </script>
+    </body>
+    </html>
+
+    2. Tallenna tiedosto GitHubiin
+
+    Kun koodi on kopioitu:
+        Etsi sivun alareunasta Commit changes.
+        Paina sitä.
+        Vahvista tallennus avautuvasta ikkunasta painamalla uudelleen Commit changes.
+
+    Nyt pelin ensimmäinen versio on tallennettu! 🎉
+    3. Seuraavaksi tehdään nettipeli
+
+    Huomaa: tämä koodi on vielä samalla laitteella pelattava prototyyppi. Kaverisi ei voi vielä liittyä siihen verkon kautta.
+
+    Seuraavaksi yhdistämme pelin moninpelipalveluun ja julkaisemme sen verkkosivuna.
+
+    Kirjoita minulle TALLENNETTU, kun olet saanut koodin GitHubiin. Autan sitten seuraavassa vaiheessa, jotta pääsette pelaamaan eri laitteilla. 🏴
+
+ChatGPT is AI and can make mistakes.
+
