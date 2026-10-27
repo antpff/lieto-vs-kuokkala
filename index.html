@@ -1,407 +1,554 @@
-    <!DOCTYPE html>
-    <html lang="fi">
-    <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Lieto vs. Kuokkala</title>
-    <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 16px;
-      background: #101827;
-      color: white;
-      font-family: Arial, sans-serif;
-      text-align: center;
-    }
-    h1 { font-size: 27px; }
-    .score { font-size: 23px; font-weight: bold; margin: 15px; }
-    canvas {
-      width: 100%;
-      max-width: 800px;
-      height: auto;
-      border: 3px solid white;
-      border-radius: 10px;
-      background: #78b65b;
-      touch-action: none;
-    }
-    button, select {
-      padding: 12px;
-      margin: 4px;
-      border: 0;
-      border-radius: 8px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    button { background: #2563eb; color: white; }
-    .controls {
-      display: grid;
-      grid-template-columns: repeat(3, 60px);
-      justify-content: center;
-      gap: 6px;
-      margin-top: 12px;
-    }
-    .controls button { height: 52px; font-size: 22px; }
-    #status { min-height: 45px; padding: 12px; }
-    </style>
-    </head>
-    <body>
+<!DOCTYPE html>
+sb_publishable_J5AaQom1tEFePlgJRJKxRw_R-fC-Z2_
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lieto vs. Kuokkala — Lipunryöstö</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:#101827;color:white;
+font-family:Arial,sans-serif;text-align:center}
+h1{font-size:26px}
+button,input{padding:12px;margin:5px;border:0;border-radius:8px;font-size:16px}
+button{cursor:pointer;background:#2563eb;color:white}
+input{max-width:100%;width:300px}
+#arena{width:100%;max-width:800px;height:auto;border:2px solid white;
+border-radius:12px;background:#78b65b;touch-action:none}
+#status{padding:12px;min-height:42px}
+#roomlink{overflow-wrap:anywhere;font-size:14px}
+.controls{display:grid;grid-template-columns:repeat(3,60px);
+justify-content:center;gap:6px;margin:15px}
+.controls button{height:52px;font-size:22px}
+.small{font-size:13px;color:#cbd5e1}
+</style>
+</head>
+<body>
+<h1>🏴 LIETO vs. KUOKKALA</h1>
+<p>1 vastaan 1 — Lipunryöstö</p>
 
-    <h1>🏴 LIETO vs. KUOKKALA</h1>
-    <p>Lipunryöstö — 1 vastaan 1!</p>
-    <div class="score" id="score">🔵 0 – 0 🔴</div>
+<div id="setup">
+  <p>Luo pelihuone tai liity kaverisi huoneeseen kutsulinkillä.</p>
+  <p><input id="url" placeholder="Supabase Project URL"></p>
+  <p><input id="key" placeholder="Supabase Publishable Key"></p>
+  <button id="create">🔵 Luo huone — Lieto</button>
+  <button id="join">🔴 Liity huoneeseen</button>
+  <p class="small">Kaverisi tarvitsee saman pelin linkin. Älä käytä secret- tai service_role-avainta.</p>
+</div>
 
-    <canvas id="game" width="800" height="500"></canvas>
-
-    <div id="status">Paina Aloita peli!</div>
-    <button id="start">▶ Aloita peli</button>
-    <button id="reset">↻ Nollaa pisteet</button>
-
-    <p>
-      🔵 Lieto: WASD<br>
-      🔴 Kuokkala: nuolinäppäimet
-    </p>
-
-    <label for="team">Puhelinohjaus:</label>
-    <select id="team">
+<div id="gamearea" hidden>
+  <h2 id="teamtitle"></h2>
+  <p id="roomlink"></p>
+  <button id="copy">📋 Kopioi kutsulinkki</button>
+  <h2 id="score">🔵 0 – 0 🔴</h2>
+  <canvas id="arena" width="800" height="500"></canvas>
+  <div id="status">Yhdistetään pelihuoneeseen...</div>
+  <button id="start">▶ Aloita peli</button>
+  <p>🔵 Lieto: W A S D</p>
+  <p>🔴 Kuokkala: nuolinäppäimet</p>
+  <div>
+    <label for="mobileteam">Puhelinohjaus:</label>
+    <select id="mobileteam">
       <option value="blue">Lieto</option>
       <option value="red">Kuokkala</option>
     </select>
+  </div>
+  <div class="controls">
+    <span></span><button data-dir="up">⬆️</button><span></span>
+    <button data-dir="left">⬅️</button>
+    <button data-dir="down">⬇️</button>
+    <button data-dir="right">➡️</button>
+  </div>
+</div>
 
-    <div class="controls">
-      <span></span><button data-dir="up">⬆️</button><span></span>
-      <button data-dir="left">⬅️</button>
-      <button data-dir="down">⬇️</button>
-      <button data-dir="right">➡️</button>
-    </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const canvas = $("arena");
+  const ctx = canvas.getContext("2d");
+  const W = 800, H = 500;
 
-    <script>
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-    const status = document.getElementById("status");
-    const scoreText = document.getElementById("score");
+  const bases = {
+    blue:{x:55,y:250},
+    red:{x:745,y:250}
+  };
 
-    const W = 800, H = 500;
+  const walls = [
+    {x:175,y:45,w:38,h:130},
+    {x:175,y:325,w:38,h:130},
+    {x:280,y:155,w:90,h:35},
+    {x:280,y:310,w:90,h:35},
+    {x:385,y:55,w:35,h:115},
+    {x:385,y:330,w:35,h:115},
+    {x:430,y:210,w:60,h:80},
+    {x:510,y:125,w:100,h:32},
+    {x:510,y:340,w:100,h:32},
+    {x:605,y:210,w:35,h:80}
+  ];
 
-    const bases = {
-      blue: { x: 55, y: 250 },
-      red: { x: 745, y: 250 }
+  let client = null;
+  let channel = null;
+  let role = null;
+  let room = null;
+  let connected = false;
+  let running = false;
+  let blueScore = 0, redScore = 0;
+  let lastTime = 0;
+  let lastSend = 0;
+  let raf = null;
+  let remoteInput = {};
+  let keys = {};
+  let touch = {blue:{},red:{}};
+  let state = null;
+
+  function newState() {
+    return {
+      players:{
+        blue:{x:95,y:250,r:12,speed:2.7,carry:null},
+        red:{x:705,y:250,r:12,speed:2.7,carry:null}
+      },
+      flags:{
+        blue:{...bases.blue},
+        red:{...bases.red}
+      },
+      scores:{blue:0,red:0},
+      running:false,
+      status:"Valmis aloittamaan!"
     };
+  }
 
-    const walls = [
-      {x:175,y:45,w:38,h:130},
-      {x:175,y:325,w:38,h:130},
-      {x:280,y:155,w:90,h:35},
-      {x:280,y:310,w:90,h:35},
-      {x:385,y:55,w:35,h:115},
-      {x:385,y:330,w:35,h:115},
-      {x:430,y:210,w:60,h:80},
-      {x:510,y:125,w:100,h:32},
-      {x:510,y:340,w:100,h:32},
-      {x:605,y:210,w:35,h:80}
-    ];
+  function message(text) {
+    $("status").textContent = text;
+    if(state) state.status = text;
+  }
 
-    let players, flags;
-    let running = false;
-    let blueScore = 0, redScore = 0;
-    let keys = {};
-    let touch = {};
-    let last = 0;
-    let animation;
-    let message = "";
+  function updateScore() {
+    $("score").textContent =
+      "🔵 " + state.scores.blue + " – " + state.scores.red + " 🔴";
+  }
 
-    function resetPositions() {
-      players = {
-        blue: {x:95,y:250,r:12,speed:2.7,carry:null},
-        red: {x:705,y:250,r:12,speed:2.7,carry:null}
-      };
+  function resetFlags() {
+    state.flags = {
+      blue:{...bases.blue},
+      red:{...bases.red}
+    };
+    state.players.blue.carry = null;
+    state.players.red.carry = null;
+  }
 
-      flags = {
-        blue: {...bases.blue},
-        red: {...bases.red}
-      };
+  function resetPositions() {
+    state.players.blue.x=95;
+    state.players.blue.y=250;
+    state.players.red.x=705;
+    state.players.red.y=250;
+    resetFlags();
+  }
+
+  function dist(a,b) {
+    return Math.hypot(a.x-b.x,a.y-b.y);
+  }
+
+  function collides(x,y,r) {
+    if(x-r<4 || x+r>W-4 || y-r<4 || y+r>H-4)
+      return true;
+
+    return walls.some(w =>
+      x+r>w.x && x-r<w.x+w.w &&
+      y+r>w.y && y-r<w.y+w.h
+    );
+  }
+
+  function move(p,dx,dy) {
+    if(dx && dy) {
+      dx*=Math.SQRT1_2;
+      dy*=Math.SQRT1_2;
     }
+    if(!collides(p.x+dx,p.y,p.r)) p.x+=dx;
+    if(!collides(p.x,p.y+dy,p.r)) p.y+=dy;
+  }
 
-    function resetFlags() {
-      flags.blue = {...bases.blue};
-      flags.red = {...bases.red};
-      players.blue.carry = null;
-      players.red.carry = null;
-    }
+  function flag(x,y,color) {
+    ctx.strokeStyle="#fff";
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(x,y+14);
+    ctx.lineTo(x,y-18);
+    ctx.stroke();
 
-    function collision(x,y,r) {
-      if (x-r<4 || x+r>W-4 || y-r<4 || y+r>H-4)
-        return true;
+    ctx.fillStyle=color;
+    ctx.beginPath();
+    ctx.moveTo(x,y-18);
+    ctx.lineTo(x+22,y-11);
+    ctx.lineTo(x,y-4);
+    ctx.closePath();
+    ctx.fill();
+  }
 
-      return walls.some(w =>
-        x+r>w.x && x-r<w.x+w.w &&
-        y+r>w.y && y-r<w.y+w.h
-      );
-    }
+  function draw() {
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle="#78b65b";
+    ctx.fillRect(0,0,W,H);
 
-    function move(p,dx,dy) {
-      if (dx && dy) {
-        dx *= 0.7071;
-        dy *= 0.7071;
-      }
+    ctx.fillStyle="rgba(37,99,235,.15)";
+    ctx.fillRect(0,0,W/2,H);
+    ctx.fillStyle="rgba(239,68,68,.15)";
+    ctx.fillRect(W/2,0,W/2,H);
 
-      if (!collision(p.x+dx,p.y,p.r)) p.x += dx;
-      if (!collision(p.x,p.y+dy,p.r)) p.y += dy;
-    }
+    ctx.strokeStyle="white";
+    ctx.setLineDash([8,8]);
+    ctx.beginPath();
+    ctx.moveTo(W/2,0);
+    ctx.lineTo(W/2,H);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    function distance(a,b) {
-      return Math.hypot(a.x-b.x,a.y-b.y);
-    }
-
-    function say(text) {
-      message = text;
-      status.textContent = text;
-    }
-
-    function flag(x,y,color) {
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 3;
+    for(const team of ["blue","red"]) {
+      const b=bases[team];
+      ctx.fillStyle=team==="blue"?"#2563eb":"#dc2626";
       ctx.beginPath();
-      ctx.moveTo(x,y+14);
-      ctx.lineTo(x,y-18);
-      ctx.stroke();
-
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(x,y-18);
-      ctx.lineTo(x+22,y-11);
-      ctx.lineTo(x,y-4);
-      ctx.closePath();
+      ctx.arc(b.x,b.y,32,0,Math.PI*2);
       ctx.fill();
+      ctx.fillStyle="white";
+      ctx.font="bold 12px Arial";
+      ctx.textAlign="center";
+      ctx.fillText(team==="blue"?"LIETO":"KUOKKALA",b.x,b.y+47);
     }
 
-    function draw() {
-      ctx.clearRect(0,0,W,H);
+    for(const w of walls) {
+      ctx.fillStyle="#64748b";
+      ctx.fillRect(w.x,w.y,w.w,w.h);
+      ctx.strokeStyle="#334155";
+      ctx.lineWidth=2;
+      ctx.strokeRect(w.x,w.y,w.w,w.h);
+    }
 
-      ctx.fillStyle = "#78b65b";
-      ctx.fillRect(0,0,W,H);
+    for(const team of ["blue","red"]) {
+      if(state.players.blue.carry!==team &&
+         state.players.red.carry!==team) {
+        const f=state.flags[team];
+        flag(f.x,f.y,team==="blue"?"#1685ff":"#ff3030");
+      }
+    }
 
-      ctx.fillStyle = "rgba(37,99,235,.15)";
-      ctx.fillRect(0,0,W/2,H);
-
-      ctx.fillStyle = "rgba(239,68,68,.15)";
-      ctx.fillRect(W/2,0,W/2,H);
-
-      ctx.strokeStyle = "white";
-      ctx.setLineDash([8,8]);
+    for(const team of ["blue","red"]) {
+      const p=state.players[team];
+      ctx.fillStyle=team==="blue"?"#1672e8":"#e23838";
       ctx.beginPath();
-      ctx.moveTo(W/2,0);
-      ctx.lineTo(W/2,H);
+      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle="white";
+      ctx.lineWidth=2;
       ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.fillStyle="white";
+      ctx.font="bold 11px Arial";
+      ctx.textAlign="center";
+      ctx.fillText(team==="blue"?"L":"K",p.x,p.y+4);
 
-      for (const [team,b] of Object.entries(bases)) {
-        ctx.fillStyle = team==="blue" ? "#2563eb" : "#dc2626";
-        ctx.beginPath();
-        ctx.arc(b.x,b.y,32,0,Math.PI*2);
-        ctx.fill();
-
-        ctx.fillStyle = "white";
-        ctx.font = "bold 12px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(team==="blue"?"LIETO":"KUOKKALA",b.x,b.y+47);
-      }
-
-      for (const w of walls) {
-        ctx.fillStyle = "#687386";
-        ctx.fillRect(w.x,w.y,w.w,w.h);
-        ctx.strokeStyle = "#303948";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(w.x,w.y,w.w,w.h);
-      }
-
-      for (const team of ["blue","red"]) {
-        if (players[team].carry !== team) {
-          flag(
-            flags[team].x,
-            flags[team].y,
-            team==="blue"?"#1685ff":"#ff3030"
-          );
-        }
-      }
-
-      for (const team of ["blue","red"]) {
-        const p = players[team];
-
-        ctx.fillStyle = team==="blue"?"#1672e8":"#e23838";
-        ctx.beginPath();
-        ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-        ctx.fill();
-
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.fillStyle = "white";
-        ctx.font = "bold 11px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(team==="blue"?"L":"K",p.x,p.y+4);
-
-        if (p.carry) {
-          flag(p.x+5,p.y-8,p.carry==="blue"?"#1685ff":"#ff3030");
-        }
-      }
-
-      if (!running) {
-        ctx.fillStyle = "rgba(0,0,0,.72)";
-        ctx.fillRect(180,190,440,115);
-        ctx.fillStyle = "white";
-        ctx.textAlign = "center";
-        ctx.font = "bold 26px Arial";
-        ctx.fillText("LIPUNRYÖSTÖ 1v1",400,230);
-        ctx.font = "16px Arial";
-        ctx.fillText("Varasta lippu ja palaa kotiin!",400,265);
+      if(p.carry) {
+        flag(p.x+5,p.y-8,p.carry==="blue"?"#1685ff":"#ff3030");
       }
     }
 
-    function finishRound(team) {
-      if (team==="blue") blueScore++;
-      else redScore++;
+    if(!state.running) {
+      ctx.fillStyle="rgba(0,0,0,.65)";
+      ctx.fillRect(180,190,440,100);
+      ctx.fillStyle="white";
+      ctx.textAlign="center";
+      ctx.font="bold 25px Arial";
+      ctx.fillText("LIPUNRYÖSTÖ 1v1",400,230);
+      ctx.font="16px Arial";
+      ctx.fillText("Varasta lippu ja palaa kotiin!",400,263);
+    }
+  }
 
-      scoreText.textContent = `🔵 ${blueScore} – ${redScore} 🔴`;
+  async function send(event,payload) {
+    if(!channel || !connected) return;
+    try {
+      await channel.send({
+        type:"broadcast",
+        event,
+        payload
+      });
+    } catch(e) {
+      console.error(e);
+    }
+  }
 
-      resetPositions();
+  function publishState() {
+    if(role==="blue" && connected) {
+      send("game_state",state);
+    }
+  }
 
-      if (blueScore>=3 || redScore>=3) {
-        running = false;
-        say((blueScore>=3?"🏆 LIETO":"🏆 KUOKKALA")+" VOITTI OTTELUN!");
-        document.getElementById("start").textContent = "▶ Uusi ottelu";
+  async function connect(team,code) {
+    const url=$("url").value.trim().replace(/\/+$/,"");
+    const key=$("key").value.trim();
+
+    if(!url || !key) {
+      alert("Lisää Supabase Project URL ja Publishable Key.");
+      return;
+    }
+
+    if(!window.supabase) {
+      alert("Supabase-kirjaston lataaminen epäonnistui. Tarkista internetyhteys.");
+      return;
+    }
+
+    role=team;
+    room=code;
+    client=window.supabase.createClient(url,key);
+
+    $("setup").hidden=true;
+    $("gamearea").hidden=false;
+    $("teamtitle").textContent=team==="blue"
+      ?"🔵 Pelaat Lietolla":"🔴 Pelaat Kuokkalalla";
+    $("mobileteam").value=team;
+    $("roomlink").textContent="Huone: "+room;
+    $("start").hidden=team!=="blue";
+
+    state=newState();
+    draw();
+
+    channel=client.channel("flag-room-"+room,{
+      config:{broadcast:{self:false}}
+    });
+
+    channel.on("broadcast",{event:"game_state"},({payload})=>{
+      if(role==="red" && payload) {
+        state=payload;
+        updateScore();
+        message(state.status || "Peli käynnissä!");
+        draw();
+      }
+    });
+
+    channel.on("broadcast",{event:"input"},({payload})=>{
+      if(role==="blue" && payload && payload.team==="red") {
+        remoteInput=payload.keys || {};
+      }
+    });
+
+    channel.subscribe(async status=>{
+      if(status==="SUBSCRIBED") {
+        connected=true;
+        message(team==="blue"
+          ?"Huone luotu! Lähetä kutsulinkki kaverillesi."
+          :"Yhdistetty huoneeseen! Odota, että Lieto aloittaa pelin.");
+
+        if(role==="red") {
+          send("hello",{team:"red"});
+        } else {
+          publishState();
+        }
+      } else if(status==="CHANNEL_ERROR" || status==="TIMED_OUT") {
+        connected=false;
+        message("Yhteys epäonnistui. Tarkista Supabase-asetukset ja yritä uudelleen.");
+      }
+    });
+
+    if(team==="blue") {
+      history.replaceState(null,"",location.pathname+"?room="+room);
+    }
+  }
+
+  function simulate(dt) {
+    if(!state.running || role!=="blue") return;
+
+    for(const team of ["blue","red"]) {
+      const p=state.players[team];
+      const input=team==="blue"?keys:remoteInput;
+      const t=touch[team] || {};
+
+      let dx=0,dy=0;
+
+      if(team==="blue") {
+        dx=(input.d?1:0)-(input.a?1:0);
+        dy=(input.s?1:0)-(input.w?1:0);
       } else {
-        say((team==="blue"?"🔵 Lieto":"🔴 Kuokkala")+" teki pisteen!");
-      }
-    }
-
-    function update(dt) {
-      if (!running) return;
-
-      for (const team of ["blue","red"]) {
-        const p = players[team];
-
-        let dx=0,dy=0;
-        const t = touch[team] || {};
-
-        if (team==="blue") {
-          dx = (keys.d?1:0)-(keys.a?1:0);
-          dy = (keys.s?1:0)-(keys.w?1:0);
-        } else {
-          dx = (keys.ArrowRight?1:0)-(keys.ArrowLeft?1:0);
-          dy = (keys.ArrowDown?1:0)-(keys.ArrowUp?1:0);
-        }
-
-        dx += (t.right?1:0)-(t.left?1:0);
-        dy += (t.down?1:0)-(t.up?1:0);
-
-        const len = Math.hypot(dx,dy)||1;
-        move(p,dx/len*p.speed*dt,dy/len*p.speed*dt);
-
-        const enemy = team==="blue"?"red":"blue";
-
-        if (!p.carry && distance(p,flags[enemy])<22) {
-          p.carry = enemy;
-          say((team==="blue"?"Lieto":"Kuokkala")+" varasti lipun! Vie se omaan tukikohtaan!");
-        }
-
-        if (p.carry) {
-          flags[p.carry] = {x:p.x,y:p.y};
-
-          if (distance(p,bases[team])<29) {
-            finishRound(team);
-            return;
-          }
-        }
+        dx=(input.ArrowRight?1:0)-(input.ArrowLeft?1:0);
+        dy=(input.ArrowDown?1:0)-(input.ArrowUp?1:0);
       }
 
-      const b=players.blue, r=players.red;
+      dx+=(t.right?1:0)-(t.left?1:0);
+      dy+=(t.down?1:0)-(t.up?1:0);
 
-      if (distance(b,r)<b.r+r.r) {
-        if (b.carry || r.carry) {
-          resetFlags();
-          b.x=95; b.y=250;
-          r.x=705; r.y=250;
-          say("💥 KIINNI! Molemmat liput palautuivat omille alueilleen!");
-        } else {
-          const dx=r.x-b.x,dy=r.y-b.y;
-          const len=Math.hypot(dx,dy)||1;
-          const push=3;
-          if (!collision(b.x-dx/len*push,b.y-dy/len*push,b.r)) {
-            b.x-=dx/len*push;
-            b.y-=dy/len*push;
+      const len=Math.hypot(dx,dy)||1;
+      move(p,dx/len*p.speed*dt,dy/len*p.speed*dt);
+
+      const enemy=team==="blue"?"red":"blue";
+
+      if(!p.carry && dist(p,state.flags[enemy])<22) {
+        p.carry=enemy;
+        state.status=(team==="blue"?"Lieto":"Kuokkala")+
+          " varasti lipun! Vie se omaan tukikohtaan!";
+      }
+
+      if(p.carry) {
+        state.flags[p.carry]={x:p.x,y:p.y};
+        if(dist(p,bases[team])<29) {
+          state.scores[team]++;
+          resetPositions();
+
+          if(state.scores[team]>=3) {
+            state.running=false;
+            state.status=(team==="blue"?"🏆 LIETO":"🏆 KUOKKALA")+
+              " VOITTI OTTELUN!";
+          } else {
+            state.status=(team==="blue"?"Lieto":"Kuokkala")+" teki pisteen!";
           }
-          if (!collision(r.x+dx/len*push,r.y+dy/len*push,r.r)) {
-            r.x+=dx/len*push;
-            r.y+=dy/len*push;
-          }
+
+          updateScore();
         }
       }
     }
 
-    function loop(time) {
-      const dt=Math.min((time-last)/16.67||1,2);
-      last=time;
-      update(dt);
-      draw();
-      if (running) animation=requestAnimationFrame(loop);
+    const b=state.players.blue,r=state.players.red;
+    if(dist(b,r)<b.r+r.r) {
+      if(b.carry || r.carry) {
+        resetFlags();
+        resetPositions();
+        state.status="💥 KIINNI! Molemmat liput palautuivat tukikohtiinsa!";
+      } else {
+        const dx=r.x-b.x,dy=r.y-b.y;
+        const len=Math.hypot(dx,dy)||1;
+        const push=3;
+
+        if(!collides(b.x-dx/len*push,b.y-dy/len*push,b.r)) {
+          b.x-=dx/len*push;
+          b.y-=dy/len*push;
+        }
+
+        if(!collides(r.x+dx/len*push,r.y+dy/len*push,r.r)) {
+          r.x+=dx/len*push;
+          r.y+=dy/len*push;
+        }
+      }
+    }
+  }
+
+  function loop(time) {
+    if(!state) return;
+    const dt=Math.min((time-lastTime)/16.67||1,2);
+    lastTime=time;
+
+    if(role==="blue" && running) {
+      simulate(dt);
+      if(time-lastSend>50) {
+        lastSend=time;
+        publishState();
+        updateScore();
+      }
     }
 
-    function startGame() {
-      cancelAnimationFrame(animation);
-      resetPositions();
-      keys={};
-      touch={};
-      running=true;
-      last=performance.now();
-      say("Peli käynnissä! Ryöstä vastustajan lippu!");
-      document.getElementById("start").textContent="↻ Aloita alusta";
-      animation=requestAnimationFrame(loop);
+    draw();
+    raf=requestAnimationFrame(loop);
+  }
+
+  $("create").onclick=()=>{
+    const code=Math.random().toString(36).slice(2,8).toUpperCase();
+    connect("blue",code);
+  };
+
+  $("join").onclick=()=>{
+    const params=new URLSearchParams(location.search);
+    const code=params.get("room");
+
+    if(!code) {
+      alert("Avaa ensin kaverisi lähettämä kutsulinkki.");
+      return;
     }
 
-    document.getElementById("start").onclick=startGame;
+    connect("red",code);
+  };
 
-    document.getElementById("reset").onclick=()=>{
-      running=false;
-      cancelAnimationFrame(animation);
-      blueScore=0;
-      redScore=0;
-      scoreText.textContent="🔵 0 – 0 🔴";
-      resetPositions();
-      say("Pisteet nollattu!");
-      document.getElementById("start").textContent="▶ Aloita peli";
-      draw();
+  $("copy").onclick=async()=>{
+    const link=location.href;
+    try {
+      await navigator.clipboard.writeText(link);
+      message("Kutsulinkki kopioitu! Lähetä se kaverillesi.");
+    } catch(e) {
+      prompt("Kopioi kutsulinkki:",link);
+    }
+  };
+
+  $("start").onclick=()=>{
+    if(role!=="blue") return;
+    state.running=true;
+    running=true;
+    state.status="Peli käynnissä! Ryöstä vastustajan lippu!";
+    message(state.status);
+    publishState();
+  };
+
+  document.addEventListener("keydown",e=>{
+    const k=e.key.length===1?e.key.toLowerCase():e.key;
+    if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key))
+      e.preventDefault();
+
+    keys[k]=true;
+
+    if(role==="red") {
+      send("input",{team:"red",keys});
+    }
+  });
+
+  document.addEventListener("keyup",e=>{
+    const k=e.key.length===1?e.key.toLowerCase():e.key;
+    keys[k]=false;
+
+    if(role==="red") {
+      send("input",{team:"red",keys});
+    }
+  });
+
+  $("mobileteam").onchange=()=>{
+    touch={blue:{},red:{}};
+  };
+
+  document.querySelectorAll("[data-dir]").forEach(btn=>{
+    const dir=btn.dataset.dir;
+
+    const set=value=>{
+      const team=$("mobileteam").value;
+      touch[team][dir]=value;
+
+      if(team==="red") {
+        const t=touch.red;
+        remoteInput={
+          ArrowUp:!!t.up,
+          ArrowDown:!!t.down,
+          ArrowLeft:!!t.left,
+          ArrowRight:!!t.right
+        };
+        send("input",{team:"red",keys:remoteInput});
+      }
     };
 
-    document.addEventListener("keydown",e=>{
-      if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key))
-        e.preventDefault();
-      keys[e.key.length===1?e.key.toLowerCase():e.key]=true;
+    btn.addEventListener("pointerdown",e=>{
+      e.preventDefault();
+      set(true);
     });
 
-    document.addEventListener("keyup",e=>{
-      keys[e.key.length===1?e.key.toLowerCase():e.key]=false;
+    ["pointerup","pointercancel","pointerleave"].forEach(ev=>{
+      btn.addEventListener(ev,()=>set(false));
     });
+  });
 
-    document.querySelectorAll("[data-dir]").forEach(btn=>{
-      const dir=btn.dataset.dir;
+  window.addEventListener("blur",()=>{
+    keys={};
+    touch={blue:{},red:{}};
+    if(role==="red") send("input",{team:"red",keys:{}});
+  });
 
-      const set=value=>{
-        const team=document.getElementById("team").value;
-        touch[team]=touch[team]||{};
-        touch[team][dir]=value;
-      };
-
-      btn.addEventListener("pointerdown",e=>{
-        e.preventDefault();
-        set(true);
-      });
-
-      ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>{
-        btn.addEventListener(ev,()=>set(false));
-      });
-    });
+  const existingRoom=new URLSearchParams(location.search).get("room");
+  if(existingRoom) {
+    $("status") && ($("status").textContent="Avaa huone liittymällä.");
+  }
+})();
+</script>
+</body>
+</html>
 
     window.addEventListener("blur",()=>{
       keys={};
