@@ -308,7 +308,11 @@ justify-content:center;gap:6px;margin:15px}
     $("start").hidden=team!=="blue";
 
     state=newState();
-    draw();
+draw();
+
+if (!raf) {
+  raf = requestAnimationFrame(loop);
+}
 
     channel=client.channel("flag-room-"+room,{
       config:{broadcast:{self:false}}
